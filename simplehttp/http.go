@@ -15,9 +15,9 @@ import (
 // other than 0, nil
 type HandleFunc func(w http.ResponseWriter, r *http.Request, l *log.Logger) (errStatus int, err error)
 
-// Router decides which handleFunc should handle the given http.Request
-// returning no handler: 404
-// returning an errorStatus: HTTP <errorStatus>
+// Router decides which handleFunc should handle the given http.Request.
+// Returning no handler: 404.
+// Returning an errorStatus: HTTP <errorStatus>.
 type Router func(r *http.Request, l *log.Logger) (handler HandleFunc, errStatus int)
 
 // HTTPErrorHandler can write to an http.ResponseWriter

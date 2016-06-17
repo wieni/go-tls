@@ -5,18 +5,14 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/base64"
 	"errors"
-	"fmt"
 	"io/ioutil"
-	"math"
 	"os"
 	"path"
-	"strings"
 )
 
-// GenerateRSAKey generates and saves rsa private key.
-// Creating necessary dirs!
+// GenerateRSAKey generates and saves a rsa private key to filepath.
+// Creating directories as needed.
 func GenerateRSAKey(filepath string, bits int) (*rsa.PrivateKey, error) {
 	dirname := path.Dir(filepath)
 
@@ -70,26 +66,4 @@ func GenerateCSR(priv *rsa.PrivateKey, main string, san []string) ([]byte, error
 	}
 
 	return x509.CreateCertificateRequest(rand.Reader, tpl, priv)
-}
-
-// FormatCSR returns a base64 encoded representation of the given csr bytes
-// as openssl does.
-func FormatCSR(csr []byte) string {
-	csrBase64 := base64.StdEncoding.EncodeToString(csr)
-
-	wrap := 64
-	ln := int(math.Ceil(float64(len(csrBase64)) / float64(wrap)))
-	split := make([]string, ln)
-	for i := 0; i < len(split); i++ {
-		if i == ln-1 {
-			split[i] = csrBase64[i*wrap:]
-			break
-		}
-
-		split[i] = csrBase64[i*wrap : (i+1)*wrap]
-	}
-	return fmt.Sprintf(
-		"-----BEGIN CERTIFICATE REQUEST-----\n%s\n-----END CERTIFICATE REQUEST-----",
-		strings.Join(split, "\n"),
-	)
 }

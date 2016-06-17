@@ -17,18 +17,26 @@ import (
 // certificate updates and errors back to the caller of Certify
 type CertificateCallback func(*tls.Certificate, error)
 
-// Certify is the all-in-one, very opinionated,
-// wrapper around the acme Client.
-// Will:
-// - try to load a certificate from cacheFile
-// - renew the certificate after refreshTime since certificate.NotBefore
-// - call the given CertificateCallback with the new certificate
-// When no certificate could be loaded from the cache file
+// Certify is the all-in-one, very opinionated, wrapper around the acme Client.
+//
+// It will:
+//
+// - try to load a certificate from cacheFile.
+//
+// - renew the certificate after refreshTime since certificate.NotBefore.
+//
+// - call the given CertificateCallback with the new certificate.
+//
+// when no certificate could be loaded from the cache file
 // or the file is unrelated to the provided tlsKey
 // or certificate.DNSNames != domain, it will:
+//
 // - Try to register / login to the acme api
+//
 // - Request authorization challenges for the given domains
+//
 // - Complete the challenges using the simpleHTTP method using the given mux
+//
 // - Send a Certificate Signing Request and call the given CertificateCallback
 func Certify(
 	log *log.Logger,

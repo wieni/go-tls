@@ -74,7 +74,7 @@ func (c *Client) resetNonce() {
 	c.endpoints = nil
 }
 
-// Handle attaches a http handle func to the given mux in order to complete
+// Handle attaches an http handle func to the given mux in order to complete
 // simpleHTTP challenges.
 func (c *Client) Handle(mux *http.ServeMux) {
 	mux.HandleFunc(
@@ -377,7 +377,7 @@ func (c *Client) sign(msg []byte) (string, error) {
 }
 
 // Register tries to create a new acme account.
-// If an account already exist or was successfully created,
+// If an account already exists or was successfully created,
 // no error will be returned.
 func (c *Client) Register(contact []string) error {
 	req := &registration{"new-reg", contact, ""}

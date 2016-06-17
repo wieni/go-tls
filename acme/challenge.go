@@ -47,8 +47,8 @@ func (c *Challenge) Create() error {
 	return nil
 }
 
-// Poll the challenge status
-// Puts an error the returned channel if something went wrong
+// Poll the challenge status.
+// Puts an error on the returned channel if something went wrong or
 // nil if everything went as expected
 func (c *Challenge) Poll() <-chan error {
 	var timeout = 2 * time.Second
