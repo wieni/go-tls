@@ -22,15 +22,27 @@ type Server struct {
 
 // New returns a new Server with the given router.
 func New(router simplehttp.Router, logger *log.Logger) *Server {
+	return FromHTTPServer(&http.Server{}, router, logger)
+}
+
+// FromHTTPServer converts an http.Server into a Server using the given router.
+func FromHTTPServer(
+	server *http.Server,
+	router simplehttp.Router,
+	logger *log.Logger,
+) *Server {
 	if logger == nil {
 		logger = log.New(ioutil.Discard, "", 0)
 	}
 
 	s := &Server{log: logger}
 
-	base := &http.Server{}
-	base.TLSConfig = &tls.Config{GetCertificate: s.getCert}
-	s.Server = simplehttp.FromHTTPServer(base, router, logger)
+	if server.TLSConfig == nil {
+		server.TLSConfig = &tls.Config{}
+	}
+
+	server.TLSConfig.GetCertificate = s.getCert
+	s.Server = simplehttp.FromHTTPServer(server, router, logger)
 
 	s.SetStrictTransportSecurity(23652000)
 
