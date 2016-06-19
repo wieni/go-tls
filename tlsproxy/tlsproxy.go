@@ -56,6 +56,7 @@ func New(domains Domains, logger *log.Logger) (*Proxy, error) {
 
 	prox := &Proxy{prox: funcs}
 	prox.Server = tls.New(prox.router, logger)
+	prox.DisableGzip()
 
 	return prox, nil
 }

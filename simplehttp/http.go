@@ -49,11 +49,12 @@ func NewHTTPError(contentType string, content []byte) *HTTPError {
 
 // Server is a tiny wrapper around an http.Server{}
 type Server struct {
-	s          *http.Server
-	log        *log.Logger
-	router     Router
-	httpErrors map[int]HTTPErrorHandler
-	headers    map[string]string
+	s           *http.Server
+	log         *log.Logger
+	router      Router
+	httpErrors  map[int]HTTPErrorHandler
+	headers     map[string]string
+	gzipEnabled bool
 }
 
 // New returns a new Server with the given router.
@@ -73,10 +74,11 @@ func FromHTTPServer(
 	}
 
 	s := &Server{
-		router:     router,
-		log:        logger,
-		httpErrors: make(map[int]HTTPErrorHandler),
-		headers:    make(map[string]string),
+		router:      router,
+		log:         logger,
+		httpErrors:  make(map[int]HTTPErrorHandler),
+		headers:     make(map[string]string),
+		gzipEnabled: true,
 	}
 
 	mux.HandleFunc("/", s.reqHandler)
@@ -93,6 +95,11 @@ func FromHTTPServer(
 // Not thread safe.
 func (s *Server) SetHeader(name string, value string) {
 	s.headers[name] = value
+}
+
+// DisableGzip disables content gzipping.
+func (s *Server) DisableGzip() {
+	s.gzipEnabled = false
 }
 
 // RemoveHeader removes a header from all future reponses.
@@ -133,9 +140,11 @@ func (s *Server) reqHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request, cb HandleFunc) {
-	gz := &gzipWriter{ResponseWriter: w, r: r}
-	defer gz.Close()
-	w = gz
+	if s.gzipEnabled {
+		gz := &gzipWriter{ResponseWriter: w, r: r}
+		defer gz.Close()
+		w = gz
+	}
 
 	headers := w.Header()
 	for name, value := range s.headers {
