@@ -1,6 +1,7 @@
 package tls
 
 import (
+	"crypto/rsa"
 	"crypto/tls"
 	"fmt"
 	"io/ioutil"
@@ -8,7 +9,9 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
+	"github.com/wieni/go-tls/acme"
 	"github.com/wieni/go-tls/simplehttp"
 )
 
@@ -101,6 +104,47 @@ func (s *Server) Start(addr string) error {
 
 	go func() {
 		errc <- s.Server.Start(addr, true)
+	}()
+
+	for {
+		select {
+		case err := <-errc:
+			return err
+		}
+	}
+}
+
+// StartCertified starts the tls server and manages its acme tls certificate.
+func (s *Server) StartCertified(
+	tlsAddr,
+	httpAddr,
+	acmeDir string,
+	domains []string,
+	contact []string,
+	refreshTimeout time.Duration,
+	accountKey *rsa.PrivateKey,
+	tlsKey *rsa.PrivateKey,
+	cacheFile string,
+) error {
+	errc := make(chan error, 1)
+	mux := s.RedirectHTTP(httpAddr)
+	go func() {
+		errc <- s.Start(tlsAddr)
+	}()
+
+	go func() {
+		errc <- acme.Certify(
+			s.log,
+			acmeDir,
+			domains,
+			contact,
+			refreshTimeout,
+			accountKey,
+			tlsKey,
+			mux,
+			cacheFile,
+			s.SetCertFromACME,
+		)
 	}()
 
 	for {

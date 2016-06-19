@@ -50,15 +50,14 @@ func main() {
 	}()
 
 	httpLogger := log.New(os.Stderr, "http|", log.LstdFlags)
-	acmeLogger := log.New(os.Stderr, "acme|", log.LstdFlags)
 	tlsServer := tls.New(router, httpLogger)
-	mux := tlsServer.RedirectHTTP(":8080")
 
 	accountKey := mustRSA([]string{"account_rsa_key"})
 	tlsKey := mustRSA([]string{"tls_rsa_key"})
-	go func() {
-		err := acme.Certify(
-			acmeLogger,
+	httpLogger.Println(
+		tlsServer.StartCertified(
+			":8081",
+			":8080",
 			"https://acme-staging.api.letsencrypt.org/directory",
 			//"https://acme-v01.api.letsencrypt.org/directory",
 			[]string{"www.my-site.com", "my-site.com"},
@@ -66,14 +65,7 @@ func main() {
 			time.Hour*24*60,
 			accountKey,
 			tlsKey,
-			mux,
 			"cert",
-			tlsServer.SetCertFromACME,
-		)
-		if err != nil {
-			acmeLogger.Println(err)
-		}
-	}()
-
-	httpLogger.Println(tlsServer.Start(":8081"))
+		),
+	)
 }
