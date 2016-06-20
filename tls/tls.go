@@ -152,7 +152,7 @@ func (s *Server) StartCertified(
 		s.SetCertFromACME,
 	)
 
-	if err == nil {
+	if err != nil {
 		return err
 	}
 
