@@ -128,28 +128,38 @@ func (s *Server) StartCertified(
 ) error {
 	errc := make(chan error, 1)
 	mux := s.RedirectHTTP(httpAddr)
+
 	go func() {
 		errc <- s.Start(tlsAddr)
 	}()
 
-	go func() {
-		errc <- acme.Certify(
-			s.log,
-			acmeDir,
-			domains,
-			contact,
-			refreshTimeout,
-			accountKey,
-			tlsKey,
-			mux,
-			cacheFile,
-			s.SetCertFromACME,
-		)
-	}()
+	select {
+	case err := <-errc:
+		return err
+	case <-time.After(time.Millisecond * 500):
+	}
+
+	stopCertify, err := acme.Certify(
+		s.log,
+		acmeDir,
+		domains,
+		contact,
+		refreshTimeout,
+		accountKey,
+		tlsKey,
+		mux,
+		cacheFile,
+		s.SetCertFromACME,
+	)
+
+	if err == nil {
+		return err
+	}
 
 	for {
 		select {
 		case err := <-errc:
+			stopCertify <- true
 			return err
 		}
 	}

@@ -54,14 +54,16 @@ func Certify(
 	serveMux *http.ServeMux,
 	cacheFile string,
 	callback CertificateCallback,
-) error {
+) (chan bool, error) {
+	stop := make(chan bool, 0)
+
 	if len(domains) == 0 {
-		return errors.New("Can't certify 0 domains")
+		return stop, errors.New("Can't certify 0 domains")
 	}
 
 	c, err := NewClient(directory, accountKey)
 	if err != nil {
-		return err
+		return stop, err
 	}
 
 	var certificate *ocspCertificate
@@ -75,17 +77,17 @@ func Certify(
 	if err == nil || !os.IsNotExist(err) {
 		// File exists, should be file and be readable.
 		if stat.IsDir() {
-			return errors.New("The provided cache file is a directory")
+			return stop, errors.New("The provided cache file is a directory")
 		}
 
 		cache, err := ioutil.ReadFile(cacheFile)
 		if err != nil {
-			return err
+			return stop, err
 		}
 
 		cachedCert, err := x509.ParseCertificate(cache)
 		if err != nil {
-			return err
+			return stop, err
 		}
 
 		forceNewCert := false
@@ -132,58 +134,60 @@ func Certify(
 
 	if !hasValidCert {
 		if err := registerAndAuth(c, log, domains, contact, serveMux); err != nil {
-			return err
+			return stop, err
 		}
 	}
 
-	for {
-		select {
-		case <-time.After(timeout):
-			if timeout != 0 {
-				c.resetNonce()
-			}
-			timeout = refreshTimeout
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(timeout):
+				if timeout != 0 {
+					c.resetNonce()
+				}
+				timeout = refreshTimeout
 
-			csr, err := GenerateCSR(tlsKey, domains[0], domains[1:])
-			if err != nil {
-				callback(nil, err)
-				continue
-			}
+				csr, err := GenerateCSR(tlsKey, domains[0], domains[1:])
+				if err != nil {
+					callback(nil, err)
+					continue
+				}
 
-			certBytes, err := c.Cert(csr)
-			if err != nil {
-				callback(nil, err)
-				continue
-			}
+				certBytes, err := c.Cert(csr)
+				if err != nil {
+					callback(nil, err)
+					continue
+				}
 
-			certificate, err := c.der2ocsp([][]byte{certBytes}, derPriv)
-			var cert *tls.Certificate
-			if certificate != nil {
-				cert = certificate.Certificate
-			}
+				certificate, err := c.der2ocsp([][]byte{certBytes}, derPriv)
+				var cert *tls.Certificate
+				if certificate != nil {
+					cert = certificate.Certificate
+				}
 
-			callback(cert, err)
-			if err == nil {
-				log.Println("New/renewed certificate")
-				if err := ioutil.WriteFile(cacheFile, certBytes, 0644); err != nil {
-					log.Printf("FAILED TO WRITE CERTIFICATE: %s", err.Error())
+				callback(cert, err)
+				if err == nil {
+					log.Println("New/renewed certificate")
+					if err := ioutil.WriteFile(cacheFile, certBytes, 0644); err != nil {
+						log.Printf("FAILED TO WRITE CERTIFICATE: %s", err.Error())
+					}
+				}
+			case <-time.After(ocspTimeout):
+				if certificate == nil {
+					continue
+				}
+				ocspTimeout = refreshOCSPTimeout
+
+				if err := certificate.update(); err != nil {
+					log.Printf("FAILED TO UPDATE OCSPStaple: %s", err.Error())
 				}
 			}
-		case <-time.After(ocspTimeout):
-			if certificate == nil {
-				continue
-			}
-			ocspTimeout = refreshOCSPTimeout
-
-			if err := certificate.update(); err != nil {
-				log.Printf("FAILED TO UPDATE OCSPStaple: %s", err.Error())
-			}
 		}
-	}
+	}()
 
-	// TODO add channel arg to quit... or sumn.
-	// unreachable atm
-	return err
+	return stop, nil
 }
 
 func registerAndAuth(
