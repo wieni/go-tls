@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +18,40 @@ import (
 
 const minPings = 3
 
+type transport struct {
+	http.RoundTripper
+	index int
+	p     *pool
+}
+
+func (t *transport) RoundTrip(r *http.Request) (*http.Response, error) {
+	res, err := t.RoundTripper.RoundTrip(r)
+	if err != nil {
+		return res, err
+	}
+
+	if t.p.cookie != "" {
+		c, _ := r.Cookie(t.p.cookie)
+		set := c == nil
+		if !set {
+			server, err := strconv.Atoi(c.Value)
+			set = err != nil || server < 0 ||
+				server >= len(t.p.pool) || !t.p.pool[server].isAvailable()
+		}
+
+		if set {
+			res.Header.Add(
+				"Set-Cookie",
+				(&http.Cookie{Name: t.p.cookie, Value: strconv.Itoa(t.index)}).String(),
+			)
+
+			res.Header.Set("Cache-Control", "nocache")
+		}
+	}
+
+	return res, nil
+}
+
 type backend struct {
 	uri                 *url.URL
 	healthCheck         time.Duration
@@ -25,19 +60,38 @@ type backend struct {
 	prox                simplehttp.HandleFunc
 }
 
+func (b *backend) isAvailable() bool {
+	return b.pings >= minPings
+}
+
 type pool struct {
 	sync.Mutex
+	cookie string
 	last   int
 	pool   []*backend
 	stopCh chan bool
 }
 
-func (p *pool) get() simplehttp.HandleFunc {
+func (p *pool) get(r *http.Request) simplehttp.HandleFunc {
 	ln := len(p.pool)
 	if ln == 0 {
 		return nil
 	} else if ln == 1 {
 		return p.pool[0].prox
+	}
+
+	cookie := -1
+	if p.cookie != "" {
+		c, _ := r.Cookie(p.cookie)
+		if c != nil {
+			if val, err := strconv.Atoi(c.Value); err == nil {
+				cookie = val
+			}
+		}
+	}
+
+	if cookie >= 0 && cookie < ln && p.pool[cookie].isAvailable() {
+		return p.pool[cookie].prox
 	}
 
 	p.last++
@@ -51,12 +105,26 @@ func (p *pool) get() simplehttp.HandleFunc {
 			offset = -i
 		}
 
-		if p.pool[offset+i].pings >= minPings {
+		if p.pool[offset+i].isAvailable() {
 			return p.pool[offset+i].prox
 		}
 	}
 
 	return nil
+}
+
+func (p *pool) createHandler(index int, target *url.URL) simplehttp.HandleFunc {
+	prox := httputil.NewSingleHostReverseProxy(target)
+	prox.Transport = &transport{http.DefaultTransport, index, p}
+
+	return func(
+		w http.ResponseWriter,
+		r *http.Request,
+		l *log.Logger,
+	) (errStatus int, err error) {
+		prox.ServeHTTP(w, r)
+		return
+	}
 }
 
 func (p *pool) stopHealthCheck() {
@@ -155,9 +223,14 @@ func (h Hosts) Slice() []string {
 }
 
 // Add a host.
-func (h Hosts) Add(host string, uri *url.URL, healthCheckInterval time.Duration) {
+func (h Hosts) Add(
+	host string,
+	uri *url.URL,
+	cookie string,
+	healthCheckInterval time.Duration,
+) {
 	if _, ok := h[host]; !ok {
-		h[host] = &pool{pool: make([]*backend, 0)}
+		h[host] = &pool{pool: make([]*backend, 0), cookie: cookie}
 	}
 
 	if !strings.Contains(uri.Host, ":") {
@@ -191,26 +264,18 @@ type Proxy struct {
 }
 
 func (p *Proxy) router(r *http.Request, l *log.Logger) (simplehttp.HandleFunc, int) {
-	if prox, ok := p.hosts[r.Host]; ok {
-		return prox.get(), 0
+	if pool, ok := p.hosts[r.Host]; ok {
+		return pool.get(r), 0
 	}
 
 	return nil, 0
 }
 
 // New tls server that proxies requests to the given url.
-func New(hosts Hosts, logger *log.Logger) (*Proxy, error) {
+func New(hosts Hosts, logger *log.Logger) *Proxy {
 	for _, backends := range hosts {
-		for _, backend := range backends.pool {
-			prox := httputil.NewSingleHostReverseProxy(backend.uri)
-			backend.prox = func(
-				w http.ResponseWriter,
-				r *http.Request,
-				l *log.Logger,
-			) (errStatus int, err error) {
-				prox.ServeHTTP(w, r)
-				return
-			}
+		for i, backend := range backends.pool {
+			backend.prox = backends.createHandler(i, backend.uri)
 		}
 	}
 
@@ -218,7 +283,7 @@ func New(hosts Hosts, logger *log.Logger) (*Proxy, error) {
 	prox.Server = tls.New(prox.router, logger)
 	prox.DisableGzip()
 
-	return prox, nil
+	return prox
 }
 
 // Start listening on the given address
