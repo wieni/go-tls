@@ -1,0 +1,18 @@
+account_keyfile: account_rsa_id
+certificate_keyfile: certificate_rsa_id
+certificate_cachefile: certificate
+acme_directory: https://acme-staging.api.letsencrypt.org/directory
+#acme_directory: https://acme-v01.api.letsencrypt.org/directory
+acme_mailto: mail@site.tld
+
+http: :8080
+tls: :8081
+
+proxy:
+    site.com:
+        cookie: backend-server
+        backends:
+            https://www.google.be: 2
+            https://duckduckgo.com: 2
+            https://www.reddit.com: 2
+
