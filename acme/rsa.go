@@ -54,18 +54,20 @@ func LoadOrGenerateRSAKey(paths []string, bits int) (*rsa.PrivateKey, error) {
 		}
 
 		key, err := x509.ParsePKCS1PrivateKey(raw)
-		if err != nil {
-			// Try to decode as PEM
-			block, _ := pem.Decode(raw)
-			if block == nil {
-				return key, err
-			}
-			if block.Type != "RSA PRIVATE KEY" {
-				return key, err
-			}
-
-			return x509.ParsePKCS1PrivateKey(block.Bytes)
+		if err == nil {
+			return key, err
 		}
+
+		// Try to decode as PEM
+		block, _ := pem.Decode(raw)
+		if block == nil {
+			return key, err
+		}
+		if block.Type != "RSA PRIVATE KEY" {
+			return key, err
+		}
+
+		return x509.ParsePKCS1PrivateKey(block.Bytes)
 	}
 
 	return GenerateRSAKey(paths[0], bits)
